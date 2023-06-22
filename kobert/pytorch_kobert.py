@@ -13,73 +13,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import os
-import sys
-import requests
-import hashlib
+from zipfile import ZipFile
 
-import torch
-
-from transformers import BertModel, BertConfig
-# from pytorch_pretrained_bert import BertModel, BertConfig
 import gluonnlp as nlp
+import torch
+from transformers import BertModel
 
-from .utils import download as _download
+from kobert.utils import download, get_tokenizer
 
-kobert_models = {
-    'pytorch_kobert': {
-        'url':
-        'https://kobert.blob.core.windows.net/models/kobert/pytorch/pytorch_kobert_2439f391a6.params',
-        'fname': 'pytorch_kobert_2439f391a6.params',
-        'chksum': '2439f391a6'
-    },
-    'vocab': {
-        'url':
-        'https://kobert.blob.core.windows.net/models/kobert/vocab/kobertvocab_f38b8a4d6d.json',
-        'fname': 'kobertvocab_f38b8a4d6d.json',
-        'chksum': 'f38b8a4d6d'
+
+def get_pytorch_kobert_model(ctx="cpu", cachedir=".cache"):
+    def get_kobert_model(model_path, vocab_file, ctx="cpu"):
+        bertmodel = BertModel.from_pretrained(model_path, return_dict=False)
+        device = torch.device(ctx)
+        bertmodel.to(device)
+        bertmodel.eval()
+        vocab_b_obj = nlp.vocab.BERTVocab.from_sentencepiece(
+            vocab_file, padding_token="[PAD]"
+        )
+        return bertmodel, vocab_b_obj
+
+    pytorch_kobert = {
+        "url": "s3://skt-lsl-nlp-model/KoBERT/models/kobert_v1.zip",
+        "chksum": "411b242919",  # 411b2429199bc04558576acdcac6d498
     }
-}
 
-
-bert_config = {'attention_probs_dropout_prob': 0.1,
- 'hidden_act': 'gelu',
- 'hidden_dropout_prob': 0.1,
- 'hidden_size': 768,
- 'initializer_range': 0.02,
- 'intermediate_size': 3072,
- 'max_position_embeddings': 512,
- 'num_attention_heads': 12,
- 'num_hidden_layers': 12,
- 'type_vocab_size': 2,
- 'vocab_size': 8002}
-
-
-
-def get_pytorch_kobert_model(ctx='cpu',
-                           cachedir='./ptr_lm_model'):
     # download model
-    model_info = kobert_models['pytorch_kobert']
-    model_path = _download(model_info['url'],
-                           model_info['fname'],
-                           model_info['chksum'],
-                           cachedir=cachedir)
+    model_info = pytorch_kobert
+    model_path, is_cached = download(
+        model_info["url"], model_info["chksum"], cachedir=cachedir
+    )
+    cachedir_full = os.path.expanduser(cachedir)
+    zipf = ZipFile(os.path.expanduser(model_path))
+    zipf.extractall(path=cachedir_full)
+    model_path = os.path.join(os.path.expanduser(cachedir), "kobert_from_pretrained")
     # download vocab
-    vocab_info = kobert_models['vocab']
-    vocab_path = _download(vocab_info['url'],
-                           vocab_info['fname'],
-                           vocab_info['chksum'],
-                           cachedir=cachedir)
+    vocab_path = get_tokenizer()
     return get_kobert_model(model_path, vocab_path, ctx)
-
-
-
-def get_kobert_model(model_file, vocab_file, ctx="cpu"):
-    bertmodel = BertModel(config=BertConfig.from_dict(bert_config))
-    bertmodel.load_state_dict(torch.load(model_file), strict=False)
-    device = torch.device(ctx)
-    bertmodel.to(device)
-    bertmodel.eval()
-    vocab_b_obj = nlp.vocab.BERTVocab.from_json(
-        open(vocab_file, 'rt').read())
-    return bertmodel, vocab_b_obj

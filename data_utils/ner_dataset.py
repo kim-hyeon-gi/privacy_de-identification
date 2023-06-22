@@ -1,21 +1,27 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import codecs
+import json
 import os
+import pickle
+import re
+from collections import OrderedDict
+from pathlib import Path
+from pprint import pprint
+from typing import (  # https://m.blog.naver.com/PostView.nhn?blogId=passion053&logNo=221070020739&proxyReferer=https%3A%2F%2Fwww.google.com%2F
+    Callable,
+    List,
+    Tuple,
+)
+
+import numpy as np
+import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
-import numpy as np
-import pandas as pd
-from pprint import pprint
-from typing import Tuple, Callable, List # https://m.blog.naver.com/PostView.nhn?blogId=passion053&logNo=221070020739&proxyReferer=https%3A%2F%2Fwww.google.com%2F
-import pickle
-import json
 from tqdm import tqdm
-from collections import OrderedDict
-import re
 
-from pathlib import Path
+
 class NamedEntityRecognitionDataset(Dataset):
     def __init__(self, train_data_dir: str, model_dir=Path('data_in')) -> None:
         """
@@ -25,6 +31,7 @@ class NamedEntityRecognitionDataset(Dataset):
         self.model_dir = model_dir
 
         list_of_total_source_no, list_of_total_source_str, list_of_total_target_str = self.load_data(train_data_dir=train_data_dir)
+        print(len(list_of_total_source_str))
         self.create_ner_dict(list_of_total_target_str)
         self._corpus = list_of_total_source_str
         self._label = list_of_total_target_str
@@ -96,9 +103,9 @@ class NamedEntityRecognitionDataset(Dataset):
         return list_of_total_source_no, list_of_total_source_str, list_of_total_target_str
 
     def load_data_from_txt(self, file_full_name):
-        with codecs.open(file_full_name, "r", "utf-8") as io:
+        with codecs.open(file_full_name, "r") as io:
             lines = io.readlines()
-
+            print(len(lines))
             # parsing에 문제가 있어서 아래 3개 변수 도입!
             prev_line = ""
             save_flag = False
@@ -120,15 +127,17 @@ class NamedEntityRecognitionDataset(Dataset):
         return list_of_source_no, list_of_source_str, list_of_target_str
 
 
-from gluonnlp.data import SentencepieceTokenizer, SentencepieceDetokenizer
+from gluonnlp.data import SentencepieceDetokenizer, SentencepieceTokenizer
+
+from data_utils.pad_sequence import keras_pad_fn
+from data_utils.vocab_tokenizer import Tokenizer, Vocabulary
 from kobert.pytorch_kobert import get_pytorch_kobert_model
 from kobert.utils import get_tokenizer
-from data_utils.vocab_tokenizer import Vocabulary, Tokenizer
-from data_utils.pad_sequence import keras_pad_fn
+
 
 class NamedEntityRecognitionFormatter():
     """ NER formatter class """
-    def __init__(self, vocab=None, tokenizer=None, maxlen=30, model_dir=Path('data_in')):
+    def __init__(self, vocab=None, tokenizer=None, maxlen=30, model_dir=Path('experiments/base_model_with_crf_val')):
 
         if vocab is None or tokenizer is None:
             tok_path = get_tokenizer()
@@ -136,7 +145,7 @@ class NamedEntityRecognitionFormatter():
             self.ptr_detokenizer = SentencepieceDetokenizer(tok_path)
             _, vocab_of_gluonnlp = get_pytorch_kobert_model()
             token2idx = vocab_of_gluonnlp.token_to_idx
-            self.vocab = Vocabulary(token2idx=token2idx)
+            self.vocab = Vocabulary(token_to_idx=token2idx)
             self.tokenizer = Tokenizer(vocab=self.vocab, split_fn=self.ptr_tokenizer, pad_fn=keras_pad_fn, maxlen=maxlen)
         else:
             self.vocab = vocab
@@ -162,6 +171,7 @@ class NamedEntityRecognitionFormatter():
             else:
                 prefix_sum_of_token_start_index.append(sum)
                 sum += len(token)
+        
         return token_ids_with_cls_sep, tokens, prefix_sum_of_token_start_index
 
 
@@ -246,10 +256,13 @@ class NamedEntityRecognitionFormatter():
 if __name__ == '__main__':
 
 
-    text = "첫 회를 시작으로 13일까지 4일간 총 4회에 걸쳐 매 회 2편씩 총 8편이 공개될 예정이다."
+    # text = "첫 회를 시작으로 13일까지 4일간 총 4회에 걸쳐 매 회 2편씩 총 8편이 공개될 예정이다."
+    text = "ooo의 전화번호는 ooo oooo oooo이고 주민등록번호는 000000 0000000입니다"
     label_text = "첫 회를 시작으로 <13일:DAT>까지 <4일간:DUR> 총 <4회:NOH>에 걸쳐 매 회 <2편:NOH>씩 총 <8편:NOH>이 공개될 예정이다."
     ner_formatter = NamedEntityRecognitionFormatter()
     token_ids_with_cls_sep, tokens, prefix_sum_of_token_start_index = ner_formatter.transform_source_fn(text)
-    ner_formatter.transform_target_fn(label_text, tokens, prefix_sum_of_token_start_index)
+    print(token_ids_with_cls_sep, '\n',tokens,'\n', prefix_sum_of_token_start_index)
+    # print(ner_formatter.transform_target_fn(label_text, tokens, prefix_sum_of_token_start_index))
+    
 
 
